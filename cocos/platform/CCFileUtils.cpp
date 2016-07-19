@@ -640,9 +640,17 @@ FileUtils::Status FileUtils::getContents(const std::string& filename, ResizableB
     if (!fp)
         return Status::OpenFailed;
 
-    fseek(fp, 0, SEEK_END);
-    size_t size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+#if defined(_MSC_VER)
+    auto descriptor = _fileno(fp);
+#else
+    auto descriptor = fileno(fp);
+#endif
+    struct stat statBuf;
+    if (fstat(descriptor, &statBuf) == -1) {
+        fclose(fp);
+        return Status::ReadFailed;
+    }
+    size_t size = statBuf.st_size;
 
     buffer->resize(size);
     size_t readsize = fread(buffer->buffer(), 1, size, fp);
@@ -1146,24 +1154,12 @@ bool FileUtils::createDirectory(const std::string& path)
 
 bool FileUtils::removeDirectory(const std::string& path)
 {
-    // FIXME: Why using subclassing? an interface probably will be better
-    // to support different OS
-    // FileUtils::removeDirectory is subclassed on iOS/tvOS
-    // and system() is not available on tvOS
-#if !defined(CC_PLATFORM_IOS)
-    if (path.size() > 0 && path[path.size() - 1] != '/')
-    {
-        CCLOGERROR("Fail to remove directory, path must terminate with '/': %s", path.c_str());
-        return false;
-    }
-
     std::string command = "rm -r ";
     // Path may include space.
     command += "\"" + path + "\"";
     if (system(command.c_str()) >= 0)
         return true;
     else
-#endif
         return false;
 }
 
